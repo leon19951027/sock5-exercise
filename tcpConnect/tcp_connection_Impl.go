@@ -11,9 +11,13 @@ type TcpConnectionImpl struct {
 	Connection *net.TCPConn
 }
 
-type Client2ServerTcpConnectionImpl struct {
+type Client2SocksServerTcpConnectionImpl struct {
 	*TcpConnectionImpl
 	Checker check.IChecker
+}
+
+type SocksServer2RemoteServerImpl struct {
+	*TcpConnectionImpl
 }
 
 type ITcpConnection interface {
@@ -22,6 +26,7 @@ type ITcpConnection interface {
 	GetBufData(b []byte, n int) (buf []byte)
 	WriteBuf(b []byte)
 	GetAddrPort(b []byte) (string, int)
+	DialRemote(addr string, port int) (*net.TCPConn, error)
 }
 
 func (t *TcpConnectionImpl) GetClientAddr() string {
@@ -62,4 +67,14 @@ func (t *TcpConnectionImpl) GetAddrPort(b []byte) (string, int) {
 	default:
 		return "", 0
 	}
+}
+
+func (t *TcpConnectionImpl) DialRemote(addr string, port int) (*net.TCPConn, error) {
+	Addr := fmt.Sprintf("%s:%d", addr, port)
+	remoteAddr, _ := net.ResolveTCPAddr("tcp", Addr)
+	remoteTcpConn, err := net.DialTCP("tcp", nil, remoteAddr)
+	if err != nil {
+		return nil, err
+	}
+	return remoteTcpConn, nil
 }

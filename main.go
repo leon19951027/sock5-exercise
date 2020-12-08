@@ -32,12 +32,11 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		// cli := &tcpConnect.TcpConnectionImpl{Connection: client}
-		clientConn := &tcpConnect.Client2ServerTcpConnectionImpl{
+
+		clientConn := &tcpConnect.Client2SocksServerTcpConnectionImpl{
 			TcpConnectionImpl: &tcpConnect.TcpConnectionImpl{Connection: client},
 			Checker:           Checker,
 		}
-		// clientConn.TcpConnectionImpl = cli
 
 		buf := make([]byte, 1024)
 
@@ -94,29 +93,37 @@ func main() {
 			//拿到了目标地址，可以开始代理了
 			switch buf[1] {
 			case 0x01: //CONNECT -> TCP
+
 				clientConn.WriteBuf([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
-				Addr := fmt.Sprintf("%s:%d", addr, port)
-				remoteAddr, _ := net.ResolveTCPAddr("tcp", Addr)
-				remoteTcpConn, err := net.DialTCP("tcp", nil, remoteAddr)
+
+				remoteTcpConn, err := clientConn.DialRemote(addr, port)
 				if err != nil {
 					clientConn.WriteBuf([]byte{0x05, 0x03})
 					return
 				}
-				defer remoteTcpConn.Close()
+
+				socksServerConn := &tcpConnect.SocksServer2RemoteServerImpl{
+					TcpConnectionImpl: &tcpConnect.TcpConnectionImpl{Connection: remoteTcpConn},
+				}
+
 				time.Sleep(10 * 1e6)
+
 				clientConn.Connection.SetNoDelay(true)
-				remoteTcpConn.SetNoDelay(true)
-				closeSig := make(chan bool, 0)
-				go pipe(clientConn.Connection, remoteTcpConn, closeSig)
-				go pipe(remoteTcpConn, clientConn.Connection, closeSig)
+				socksServerConn.Connection.SetNoDelay(true)
+
+				closeSig := make(chan bool)
+				go exchange(clientConn.Connection, socksServerConn.Connection, closeSig)
+				go exchange(socksServerConn.Connection, clientConn.Connection, closeSig)
+				fmt.Println(closeSig)
 				<-closeSig
 				return
 			case 0x02:
 				log.Println("WARN >>> get BIND command, not support.")
+				return
 			case 0x03: //UDP
 				log.Println("WARN >>> udp proxy not support.")
 				// p.udpProxy(dstAddr, dstPort)
-				// return
+				return
 			default:
 				return
 			}
@@ -124,13 +131,18 @@ func main() {
 	}
 }
 
-func pipe(src, dst *net.TCPConn, closeSig chan bool) {
+func exchange(src, dst *net.TCPConn, closeSig chan bool) {
+	fmt.Println("****************************")
+	fmt.Println(src.RemoteAddr().String())
+	fmt.Println(dst.RemoteAddr().String())
 	buf := make([]byte, 0xff)
 	for {
 		n, err := src.Read(buf[0:])
 		fmt.Println("//////////////////////////////////////////")
-		fmt.Println(n)
+		fmt.Println(buf)
 		if err != nil {
+			fmt.Println(err)
+			fmt.Println("退出")
 			closeSig <- true
 			return
 		}
@@ -139,6 +151,8 @@ func pipe(src, dst *net.TCPConn, closeSig chan bool) {
 		fmt.Println("\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\")
 		fmt.Println(b)
 		if err != nil {
+			fmt.Println(err)
+			fmt.Println("退出")
 			closeSig <- true
 			return
 		}
