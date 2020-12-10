@@ -41,7 +41,11 @@ func main() {
 		buf := make([]byte, 1024)
 
 		go func() {
-			defer clientConn.Connection.Close()
+
+			defer func() {
+				clientConn.Connection.Close()
+			}()
+
 			//第一个buf，客户端发送协议，认证方式等
 			/*
 						+----+----------+----------+
@@ -89,7 +93,7 @@ func main() {
 			_, destnationAddrinfo := clientConn.ReadBuf(buf)
 			addr, port := clientConn.GetAddrPort(destnationAddrinfo[3:])
 
-			fmt.Println(addr, port)
+			//fmt.Println(addr, port)
 			//拿到了目标地址，可以开始代理了
 			switch buf[1] {
 			case 0x01: //CONNECT -> TCP
@@ -114,8 +118,9 @@ func main() {
 				closeSig := make(chan bool)
 				go exchange(clientConn.Connection, socksServerConn.Connection, closeSig)
 				go exchange(socksServerConn.Connection, clientConn.Connection, closeSig)
-				fmt.Println(closeSig)
+
 				<-closeSig
+
 				return
 			case 0x02:
 				log.Println("WARN >>> get BIND command, not support.")
@@ -133,27 +138,31 @@ func main() {
 
 func exchange(src, dst *net.TCPConn, closeSig chan bool) {
 	fmt.Println("****************************")
-	fmt.Println(src.RemoteAddr().String())
-	fmt.Println(dst.RemoteAddr().String())
 	buf := make([]byte, 0xff)
 	for {
+		fmt.Println("----------src---------------")
+		fmt.Println(src.RemoteAddr().String())
 		n, err := src.Read(buf[0:])
-		fmt.Println("//////////////////////////////////////////")
+
 		fmt.Println(buf)
 		if err != nil {
 			fmt.Println(err)
 			fmt.Println("退出")
 			closeSig <- true
+
 			return
 		}
 		b := buf[0:n]
+		fmt.Println("----------dst---------------")
+		fmt.Println(dst.RemoteAddr().String())
 		_, err = dst.Write(b)
-		fmt.Println("\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\")
+
 		fmt.Println(b)
 		if err != nil {
 			fmt.Println(err)
 			fmt.Println("退出")
 			closeSig <- true
+
 			return
 		}
 	}
